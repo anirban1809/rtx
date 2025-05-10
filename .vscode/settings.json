@@ -1,0 +1,12 @@
+{
+    "clangd.path":"/usr/bin/clangd",
+  "clangd.arguments": [
+    "--compile-commands-dir=build",
+    "--header-insertion=never",
+     "--header-insertion=iwyu"
+
+  ],
+"C_Cpp.default.cppStandard": "c++17",
+"dotnet.defaultSolution": "disable",
+"cmake.exportCompileCommandsFile": true
+}
