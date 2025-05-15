@@ -1,134 +1,124 @@
+// This is the updated main.cpp that loads the converted ShaderToy-style
+// fragment shader as a regular GLSL 330 core fragment shader with main() entry
+// point and required uniforms.
+
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
+#include <fstream>
 #include <iostream>
+#include <sstream>
+#include <string>
 
-const int WIDTH = 1024;
-const int HEIGHT = 768;
-
-const char *vertexShaderSource = R"(
-#version 330 core
-layout (location = 0) in vec2 aPos;
-out vec2 TexCoord;
-void main() {
-    TexCoord = aPos * 0.5 + 0.5;
-    gl_Position = vec4(aPos, 0.0, 1.0);
+std::string readShaderSource(const std::string &filepath) {
+  std::ifstream file(filepath);
+  std::stringstream buffer;
+  buffer << file.rdbuf();
+  return buffer.str();
 }
-)";
 
-const char *fragmentShaderSource = R"(
-#version 330 core
-in vec2 TexCoord;
-out vec4 FragColor;
+GLuint compileShader(GLenum type, const std::string &source) {
+  GLuint shader = glCreateShader(type);
+  const char *src = source.c_str();
+  glShaderSource(shader, 1, &src, nullptr);
+  glCompileShader(shader);
 
-uniform sampler2D u_image;
-
-void main() {
-    FragColor = texture(u_image, TexCoord);
+  GLint success;
+  glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+  if (!success) {
+    char infoLog[512];
+    glGetShaderInfoLog(shader, 512, NULL, infoLog);
+    std::cerr << "ERROR::SHADER::COMPILATION_FAILED\n" << infoLog << std::endl;
+  }
+  return shader;
 }
-)";
 
-int main() {
-  if (!glfwInit()) {
-    std::cerr << "Failed to init GLFW\n";
-    return -1;
+GLuint createShaderProgram(const std::string &vertexSource,
+                           const std::string &fragmentSource) {
+  GLuint vertexShader = compileShader(GL_VERTEX_SHADER, vertexSource);
+  GLuint fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentSource);
+
+  GLuint program = glCreateProgram();
+  glAttachShader(program, vertexShader);
+  glAttachShader(program, fragmentShader);
+  glLinkProgram(program);
+
+  GLint success;
+  glGetProgramiv(program, GL_LINK_STATUS, &success);
+  if (!success) {
+    char infoLog[512];
+    glGetProgramInfoLog(program, 512, NULL, infoLog);
+    std::cerr << "ERROR::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
   }
 
-  // Setup OpenGL context version
+  glDeleteShader(vertexShader);
+  glDeleteShader(fragmentShader);
+
+  return program;
+}
+
+int main() {
+  glfwInit();
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-#ifdef __APPLE__
-  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); // Required on macOS
-#endif
-
-  GLFWwindow *window =
-      glfwCreateWindow(WIDTH, HEIGHT, "Pixel Shader Grid", nullptr, nullptr);
+  GLFWwindow *window = glfwCreateWindow(800, 600, "Ray Tracer", NULL, NULL);
   if (!window) {
-    std::cerr << "Failed to create GLFW window\n";
+    std::cerr << "Failed to create GLFW window" << std::endl;
     glfwTerminate();
     return -1;
   }
   glfwMakeContextCurrent(window);
+  glewExperimental = GL_TRUE;
+  glewInit();
 
-  if (glewInit() != GLEW_OK) {
-    std::cerr << "Failed to init GLEW\n";
-    return -1;
-  }
+  float quadVertices[] = {-1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f,
+                          -1.0f, 1.0f,  1.0f, -1.0f, 1.0f,  1.0f};
 
-  // Compile vertex shader
-  GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-  glShaderSource(vertexShader, 1, &vertexShaderSource, nullptr);
-  glCompileShader(vertexShader);
-
-  // Compile fragment shader
-  GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-  glShaderSource(fragmentShader, 1, &fragmentShaderSource, nullptr);
-  glCompileShader(fragmentShader);
-
-  // Link program
-  GLuint shaderProgram = glCreateProgram();
-  glAttachShader(shaderProgram, vertexShader);
-  glAttachShader(shaderProgram, fragmentShader);
-  glLinkProgram(shaderProgram);
-  glUseProgram(shaderProgram);
-
-  // Fullscreen quad
-  float quadVertices[] = {
-      -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f,
-  };
-
-  GLuint vao, vbo;
-  glGenVertexArrays(1, &vao);
-  glGenBuffers(1, &vbo);
-
-  glBindVertexArray(vao);
-  glBindBuffer(GL_ARRAY_BUFFER, vbo);
+  GLuint VAO, VBO;
+  glGenVertexArrays(1, &VAO);
+  glGenBuffers(1, &VBO);
+  glBindVertexArray(VAO);
+  glBindBuffer(GL_ARRAY_BUFFER, VBO);
   glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices,
                GL_STATIC_DRAW);
-
-  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
+  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
   glEnableVertexAttribArray(0);
 
-  unsigned char pixels[WIDTH * HEIGHT * 3];
+  std::string vertexShader = R"(
+        #version 330 core
+        layout(location = 0) in vec2 aPos;
+        out vec2 fragCoord;
+        void main() {
+            fragCoord = aPos * 0.5 + 0.5;
+            gl_Position = vec4(aPos, 0.0, 1.0);
+        }
+    )";
 
-  for (int y = 0; y < HEIGHT; ++y) {
-    for (int x = 0; x < WIDTH; ++x) {
-      int index = (y * WIDTH + x) * 3;
-
-      // Scale x and y to 0–255 range
-      uint8_t r = (x / (float)(WIDTH)) * 255.0f;
-      uint8_t g = (y / (float)(HEIGHT)) * 255.0f;
-
-      pixels[index + 0] = r; // Red: 0-255 based on x
-      pixels[index + 1] = g; // Green: 0-255 based on y
-      pixels[index + 2] = 0; // Blue: 0
-    }
-  }
-
-  GLuint textureID;
-  glGenTextures(1, &textureID);
-  glBindTexture(GL_TEXTURE_2D, textureID);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, WIDTH, HEIGHT, 0, GL_RGB,
-               GL_UNSIGNED_BYTE, pixels);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  std::string fragmentShader =
+      readShaderSource("fragment.glsl"); // your converted shader file
+  GLuint shaderProgram = createShaderProgram(vertexShader, fragmentShader);
 
   while (!glfwWindowShouldClose(window)) {
     glClear(GL_COLOR_BUFFER_BIT);
+    glUseProgram(shaderProgram);
 
-    glActiveTexture(GL_TEXTURE0); // Use texture unit 0
-    glBindTexture(GL_TEXTURE_2D,
-                  textureID); // textureID is your uploaded texture
+    int iResolutionLoc = glGetUniformLocation(shaderProgram, "iResolution");
+    glUniform2f(iResolutionLoc, 800.0f, 600.0f);
 
-    GLint location = glGetUniformLocation(shaderProgram, "u_image");
-    glUniform1i(location, 0);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    int iTimeLoc = glGetUniformLocation(shaderProgram, "iTime");
+    glUniform1f(iTimeLoc, (float)glfwGetTime());
+
+    glBindVertexArray(VAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
 
     glfwSwapBuffers(window);
     glfwPollEvents();
   }
+
+  glDeleteVertexArrays(1, &VAO);
+  glDeleteBuffers(1, &VBO);
+  glDeleteProgram(shaderProgram);
 
   glfwTerminate();
   return 0;
