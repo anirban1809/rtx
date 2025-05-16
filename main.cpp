@@ -2,12 +2,18 @@
 // fragment shader as a regular GLSL 330 core fragment shader with main() entry
 // point and required uniforms.
 
+#include "glm/glm.hpp"
+#include "glm/gtc/matrix_transform.hpp"
+#include "glm/gtc/type_ptr.hpp"
+#include "glm/matrix.hpp"
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
+
+#define GLM_FORCE_INTRINSICS
 
 std::string readShaderSource(const std::string &filepath) {
   std::ifstream file(filepath);
@@ -62,7 +68,8 @@ int main() {
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-  GLFWwindow *window = glfwCreateWindow(800, 600, "Ray Tracer", NULL, NULL);
+  GLFWwindow *window =
+      glfwCreateWindow(1024, 1024, "Shader Example", NULL, NULL);
   if (!window) {
     std::cerr << "Failed to create GLFW window" << std::endl;
     glfwTerminate();
@@ -72,52 +79,59 @@ int main() {
   glewExperimental = GL_TRUE;
   glewInit();
 
-  float quadVertices[] = {-1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f,
-                          -1.0f, 1.0f,  1.0f, -1.0f, 1.0f,  1.0f};
+  float vertices[] = {
+      0.0f,   0.0f, 0.0f,   // Bottom-left
+      -10.0f, 0.0f, 0.0f,   // Bottom-right
+      -10.0f, 0.0f, -10.0f, // Top-right
+      0.0f,   0.0f, -10.0f  // Top-left
+  };
+  unsigned int indices[] = {0, 1, 2, 0, 2, 3};
 
-  GLuint VAO, VBO;
-  glGenVertexArrays(1, &VAO);
-  glGenBuffers(1, &VBO);
-  glBindVertexArray(VAO);
-  glBindBuffer(GL_ARRAY_BUFFER, VBO);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices,
+  GLuint vao, vbo, ebo;
+  glGenVertexArrays(1, &vao);
+  glGenBuffers(1, &vbo);
+  glBindVertexArray(vao);
+  glBindBuffer(GL_ARRAY_BUFFER, vbo);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+  glGenBuffers(1, &ebo);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices,
                GL_STATIC_DRAW);
-  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
+
   glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)0);
+  glEnable(GL_DEPTH_TEST);
 
-  std::string vertexShader = R"(
-        #version 330 core
-        layout(location = 0) in vec2 aPos;
-        out vec2 fragCoord;
-        void main() {
-            fragCoord = aPos * 0.5 + 0.5;
-            gl_Position = vec4(aPos, 0.0, 1.0);
-        }
-    )";
-
-  std::string fragmentShader =
-      readShaderSource("fragment.glsl"); // your converted shader file
+  std::string fragmentShader = readShaderSource("fragment.glsl");
+  std::string vertexShader = readShaderSource("vertex.glsl");
   GLuint shaderProgram = createShaderProgram(vertexShader, fragmentShader);
 
+  glm::mat4 model = glm::mat4(1.0f);
+  glm::mat4 view =
+      glm::lookAt(glm::vec3(3.0f), glm::vec3(0, 1, 0), glm::vec3(0, 1, 0));
+  glm::mat4 projection =
+      glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
+  glm::mat4 mvp = projection * view * model;
+
   while (!glfwWindowShouldClose(window)) {
-    glClear(GL_COLOR_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glUseProgram(shaderProgram);
 
-    int iResolutionLoc = glGetUniformLocation(shaderProgram, "iResolution");
-    glUniform2f(iResolutionLoc, 800.0f, 600.0f);
+    GLuint mvpLoc = glGetUniformLocation(shaderProgram, "uMVP");
+    glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, glm::value_ptr(mvp));
 
-    int iTimeLoc = glGetUniformLocation(shaderProgram, "iTime");
-    glUniform1f(iTimeLoc, (float)glfwGetTime());
-
-    glBindVertexArray(VAO);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(vao);
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
     glfwSwapBuffers(window);
     glfwPollEvents();
   }
 
-  glDeleteVertexArrays(1, &VAO);
-  glDeleteBuffers(1, &VBO);
+  glDeleteVertexArrays(1, &vao);
+  glDeleteBuffers(1, &vbo);
+  glDeleteBuffers(1, &ebo);
   glDeleteProgram(shaderProgram);
 
   glfwTerminate();
